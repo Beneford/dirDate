@@ -1,6 +1,7 @@
 # dirDate
 Bash script to set the date of a directory to the latest date of any contained file
 
+~~~
 Usage: dirDate [options] directory ...
         update directory's date/time to be that of the most recently
         changed contained file/folder
@@ -14,3 +15,4 @@ Usage: dirDate [options] directory ...
 
         short options use the initial letter of long options:
         -hvqt
+~~~

@@ -1,0 +1,166 @@
+#!/bin/bash
+#
+# dirDate utility updates the date/time on all folders to
+#	the date of the latest file/folder it contains
+#
+# Copyright(C) 2019 Beneford Limited
+#
+# Function definitions follow
+iam=${0##*/}		# ${variable##*/} deletes upto last /
+			# ${variable%%:*} deletes from : to end
+usage() {
+	if [ "$usageShown" != "TRUE" ]; then
+	cat <<EOF
+Usage: $iam [options] directory ...
+	update directory's date/time to be that of the most recently
+	changed contained file/folder
+	Options:
+
+	--help		show this help screen
+	--verbose	control message level (repeat for more information)
+	--quiet		control message level (repeat for less information)
+	--norecurse	don't update subdirectory date/times
+	--test		test mode (say what will be done, don't do it)
+	
+	short options use the initial letter of long options:
+	-hvqt
+EOF
+	usageShown=TRUE
+	fi
+	}
+
+Directories=()        # initialize empty array of Directories to process
+addDir() {
+        log 3 9 $LINENO "adding dir: $@"
+        for dir in "$@"; do
+                Directories+=("$dir")
+        done
+}
+paramFor=None
+processOption() {
+        param=$1
+        TorF=TRUE
+        [[ $param =~ --no* ]] && TorF=FALSE && param=--${param:4}
+        log 3 9 $LINENO "Processing option: $param ($TorF)"
+        case $paramFor in
+                None) case $param in
+                        -h|--h|--he|--hel|--help)
+                                usage;;
+                        -v|--v|--ve|--verb-|--verbo|--verbos|--verbose)
+                                logLevel=$(( $logLevel+1 ));;
+                        -q|--q|--qu|--qui|--quie|--quiet)
+                                [ $logLevel -gt 0 ] && logLevel=$(( $logLevel-1 ));;
+			-r|--re|--rec|--recu|--recur|--recurs|--recurse)
+				recurse=$TorF;;
+                        -t|--t|--te|--tes|--test)
+                                testMode=$TorF;;
+                        --*)    echo "Invalid long option: $1";;
+                        -*)     echo "Invalid option: $1";;
+                        *)      addDir "$1";;
+                        esac;;
+        esac
+	}
+
+processOptions() {
+        paramFor=None
+        for arg in "$@"; do
+                if [[ $arg =~ ^-[^-].* ]]; then
+                        for i in $(seq 2 ${#arg}); do
+                                processOption "-${arg:$i-1:1}"
+                        done
+                else
+                        processOption "$arg"
+                fi
+        done
+}
+ 
+# Usage: debug strings
+#	output strings to STDERR
+debug() { # usage: debug string (output to stderr)
+	echo "${@:1}" 1>&2
+	}
+
+# Usage: log levelL levelH lineno strings
+#	if level is greater than the current log-level, output strings to STDOUT
+log() { # usage: log level string
+#	debug "[debug: ($logLevel) $1 $2 $3 $4]"
+	if [ $logLevel -le $2 ] && [ $logLevel -ge $1 ]; then
+		if [ $logging == TRUE ]; then
+			if [ $logLineNos == TRUE ]; then
+				echo "[`date`][Line $3] ${@:4}" >> $logFile
+			else
+				echo "[`date`] ${@:4}" >> $logFile
+			fi
+		else
+			if [ $logLineNos == TRUE ]; then
+				echo [Line $3] "${@:4}" 1>&2
+			else
+				echo "${@:4}" 1>&2
+			fi
+		fi
+	fi
+	}
+
+# Set defaults (can be overriden by the config file
+defaults() {
+	logging=FALSE
+	logFile="/var/log/$iam.log"
+	logLevel=1
+	logLineNos=FALSE
+	testMode=FALSE
+	recurse=TRUE
+	}
+
+# output the current configuration
+printConfig() {
+	cat <<EOF
+Active configuration:
+logFile=$logFile
+logLevel=$logLevel; logLineNos=$logLineNos
+recurse=$recurse
+testMode=$testMode
+EOF
+	}
+
+# This is the function that does the work
+processDirectories() {
+	while [ "$1" != "" ]; do
+		IFS=$'\n'
+		nextLevel=(`find "$1" -mindepth 1 -maxdepth 1 -type d -printf "%p\n" 2> /dev/null`)
+		unset IFS
+		log 2 9 $LINENO "Processing $1"
+		if [ $recurse == TRUE ]; then
+			[ ${#nextLevel[@]} -gt 0 ] && processDirectories "${nextLevel[@]}"
+		fi
+		keyFile=`ls -1rtAd $1/* 2> /dev/null | tail -n 1`
+		# Escape some important file characters: $
+		keyFile=${keyFile/\$/\\$/}
+		if [ -e "$keyFile" ]; then
+			if [ $testMode == TRUE ]; then
+				echo "touch -r \"$keyFile\" \"$1\""
+			else
+				touch -r "$keyFile" "$1"
+			fi
+		fi
+		shift
+	done
+}
+
+# This is the main program
+
+usageShown=FALSE
+
+defaults
+processOptions "$@"
+[ $logLevel -gt 2 ] && printConfig
+
+[ ${#Directories[@]} == 0 ] && usage
+[ $usageShown == TRUE ] && exit
+
+log 1 9 $LINENO "$iam started `date`"
+log 2 9 $LINENO "$iam ${@:1}"
+
+processDirectories ${Directories[@]}
+
+log 1 9 $LINENO "$iam completed `date`"
+exit
